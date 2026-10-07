@@ -1,0 +1,17 @@
+# Segredos
+.env
+*.pem
+*.key
+/secrets/
+*service-account*.json
+*credentials*.json
+
+# Go
+/backend/bin/
+*.test
+*.out
+
+# Editores / SO
+.idea/
+.vscode/
+.DS_Store
