@@ -85,6 +85,20 @@ flutter run --dart-define=API_URL=http://10.0.2.2:8080
 
 Veja [app/README.md](app/README.md) para o endereço da API em aparelho físico.
 
+O app tem três abas: **Buscar** (catálogo do servidor, com filtros de marca,
+modelo, motor e tipo), **Favoritos** e **Baixados** (arquivos salvos no
+aparelho, com busca que funciona sem internet). No menu da conta ficam as
+configurações (download automático dos favoritos no Wi-Fi, troca de senha) e,
+para administradores, a catalogação dos arquivos do Drive, a manutenção dos
+cadastros e os usuários.
+
+Depois de mudar as tabelas em `app/lib/offline/banco_local.dart`, regenere o
+código do banco local:
+
+```bash
+cd app && dart run build_runner build
+```
+
 ## Rotas
 
 Todas exigem `Authorization: Bearer <token>`, menos `/healthz` e `/auth/login`.
