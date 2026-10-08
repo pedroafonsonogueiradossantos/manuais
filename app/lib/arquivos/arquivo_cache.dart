@@ -8,6 +8,42 @@ import '../api/modelos.dart';
 
 typedef Progresso = void Function(int recebido, int total);
 
+/// O que o cache precisa saber de um arquivo no servidor.
+class ArquivoRemoto {
+  const ArquivoRemoto({
+    required this.url,
+    required this.chave,
+    required this.mimeType,
+    required this.tamanhoBytes,
+    this.md5,
+  });
+
+  factory ArquivoRemoto.doDocumento(Documento doc) => ArquivoRemoto(
+    url: '/documentos/${doc.id}/arquivo',
+    chave: '${doc.id}-${doc.versaoDoArquivo}',
+    mimeType: doc.mimeType,
+    tamanhoBytes: doc.tamanhoBytes,
+    md5: doc.arquivoMd5,
+  );
+
+  /// Arquivo ainda não catalogado, visto pelo admin antes de catalogar.
+  factory ArquivoRemoto.doPendente(ArquivoPendente a) => ArquivoRemoto(
+    url: ApiClient.caminhoDoPreview(a.storageFileId),
+    chave:
+        'preview-${a.storageFileId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}',
+    mimeType: a.mimeType,
+    tamanhoBytes: a.tamanhoBytes,
+  );
+
+  final String url;
+
+  /// Nome do arquivo local; muda quando o conteúdo muda.
+  final String chave;
+  final String mimeType;
+  final int tamanhoBytes;
+  final String? md5;
+}
+
 /// Baixa os arquivos dos documentos para o disco. O visualizador sempre abre
 /// um arquivo local: nada fica inteiro na memória e o download pode ser
 /// retomado de onde parou.
@@ -19,7 +55,7 @@ class ArquivoCache {
 
   /// O nome inclui a versão do arquivo: se o arquivo mudar no servidor, o
   /// antigo deixa de ser encontrado e é baixado de novo.
-  Future<File> _destino(Documento doc) async {
+  Future<File> _destino(ArquivoRemoto doc) async {
     final ext = switch (doc.mimeType) {
       'application/pdf' => '.pdf',
       'image/jpeg' => '.jpg',
@@ -27,18 +63,29 @@ class ArquivoCache {
       'image/webp' => '.webp',
       _ => '',
     };
-    return File(p.join((await pasta()).path, '${doc.id}-${doc.versaoDoArquivo}$ext'));
+    return File(p.join((await pasta()).path, '${doc.chave}$ext'));
   }
 
   /// Arquivo já baixado nesta versão, ou null.
   Future<File?> existente(Documento doc) async {
-    final arquivo = await _destino(doc);
+    final arquivo = await _destino(ArquivoRemoto.doDocumento(doc));
     return await arquivo.exists() ? arquivo : null;
   }
 
-  /// Devolve o arquivo local, baixando se for preciso. Lança [ApiErro].
+  /// Devolve o arquivo local do documento, baixando se for preciso.
+  /// Lança [ApiErro].
   Future<File> obter(
     Documento doc, {
+    Progresso? aoProgredir,
+    CancelToken? cancelamento,
+  }) => obterRemoto(
+    ArquivoRemoto.doDocumento(doc),
+    aoProgredir: aoProgredir,
+    cancelamento: cancelamento,
+  );
+
+  Future<File> obterRemoto(
+    ArquivoRemoto doc, {
     Progresso? aoProgredir,
     CancelToken? cancelamento,
   }) async {
@@ -72,7 +119,7 @@ class ArquivoCache {
   }
 
   Future<void> _baixar(
-    Documento doc,
+    ArquivoRemoto doc,
     File parcial,
     Progresso? aoProgredir,
     CancelToken? cancelamento,
@@ -80,7 +127,7 @@ class ArquivoCache {
     // Só retoma com md5: o If-Range garante que o resto é do mesmo arquivo.
     var inicio = 0;
     if (await parcial.exists()) {
-      if (doc.arquivoMd5 != null) {
+      if (doc.md5 != null) {
         inicio = await parcial.length();
       } else {
         await parcial.delete();
@@ -88,13 +135,13 @@ class ArquivoCache {
     }
 
     final resposta = await dio.get<ResponseBody>(
-      '/documentos/${doc.id}/arquivo',
+      doc.url,
       cancelToken: cancelamento,
       options: Options(
         responseType: ResponseType.stream,
         headers: {
           if (inicio > 0) 'Range': 'bytes=$inicio-',
-          if (inicio > 0) 'If-Range': '"${doc.arquivoMd5}"',
+          if (inicio > 0) 'If-Range': '"${doc.md5}"',
         },
       ),
     );
@@ -104,8 +151,13 @@ class ArquivoCache {
     if (!retomando) inicio = 0;
 
     final tamanhoDoCorpo =
-        int.tryParse(resposta.headers.value(Headers.contentLengthHeader) ?? '') ?? 0;
-    final total = tamanhoDoCorpo > 0 ? inicio + tamanhoDoCorpo : doc.tamanhoBytes;
+        int.tryParse(
+          resposta.headers.value(Headers.contentLengthHeader) ?? '',
+        ) ??
+        0;
+    final total = tamanhoDoCorpo > 0
+        ? inicio + tamanhoDoCorpo
+        : doc.tamanhoBytes;
 
     final saida = parcial.openWrite(
       mode: retomando ? FileMode.append : FileMode.write,

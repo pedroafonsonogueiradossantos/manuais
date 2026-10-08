@@ -8,16 +8,26 @@ import '../api/modelos.dart';
 
 /// Mostra um arquivo que já está no disco: PDF ou imagem com zoom.
 class VisualizadorPage extends StatelessWidget {
-  const VisualizadorPage({super.key, required this.documento, required this.arquivo});
+  const VisualizadorPage({
+    super.key,
+    required this.titulo,
+    required this.ehImagem,
+    required this.arquivo,
+  });
 
-  final Documento documento;
+  VisualizadorPage.doDocumento(Documento doc, this.arquivo, {super.key})
+    : titulo = doc.titulo,
+      ehImagem = doc.ehImagem;
+
+  final String titulo;
+  final bool ehImagem;
   final File arquivo;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(documento.titulo)),
-      body: documento.ehImagem
+      appBar: AppBar(title: Text(titulo)),
+      body: ehImagem
           ? PhotoView(
               imageProvider: FileImage(arquivo),
               minScale: PhotoViewComputedScale.contained,
@@ -45,7 +55,10 @@ class _NaoAbriu extends StatelessWidget {
     return const Center(
       child: Padding(
         padding: EdgeInsets.all(32),
-        child: Text('Não foi possível abrir este arquivo.', textAlign: TextAlign.center),
+        child: Text(
+          'Não foi possível abrir este arquivo.',
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

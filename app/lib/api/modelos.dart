@@ -4,12 +4,14 @@ class Usuario {
     required this.nome,
     required this.email,
     required this.papel,
+    this.ativo = true,
   });
 
   final int id;
   final String nome;
   final String email;
   final String papel;
+  final bool ativo;
 
   bool get admin => papel == 'admin';
 
@@ -18,6 +20,7 @@ class Usuario {
     nome: j['nome'] as String,
     email: j['email'] as String,
     papel: j['papel'] as String,
+    ativo: j['ativo'] as bool? ?? true,
   );
 
   Map<String, dynamic> toJson() => {
@@ -38,8 +41,66 @@ class Marca {
       Marca(id: j['id'] as int, nome: j['nome'] as String);
 }
 
+class Modelo {
+  const Modelo({required this.id, required this.marcaId, required this.nome});
+
+  final int id;
+  final int marcaId;
+  final String nome;
+
+  factory Modelo.fromJson(Map<String, dynamic> j) => Modelo(
+    id: j['id'] as int,
+    marcaId: j['marca_id'] as int,
+    nome: j['nome'] as String,
+  );
+}
+
+/// Arquivo do Drive que ainda não virou documento.
+class ArquivoPendente {
+  const ArquivoPendente({
+    required this.storageFileId,
+    required this.nome,
+    required this.caminho,
+    required this.mimeType,
+    required this.tamanhoBytes,
+    this.ignorado = false,
+  });
+
+  final String storageFileId;
+  final String nome;
+
+  /// Pastas a partir da raiz, ex.: "VW/Gol".
+  final String caminho;
+  final String mimeType;
+  final int tamanhoBytes;
+  final bool ignorado;
+
+  bool get ehImagem => mimeType.startsWith('image/');
+
+  /// Nome sem a extensão, como sugestão de título.
+  String get tituloSugerido {
+    final ponto = nome.lastIndexOf('.');
+    return (ponto > 0 ? nome.substring(0, ponto) : nome)
+        .replaceAll('_', ' ')
+        .trim();
+  }
+
+  factory ArquivoPendente.fromJson(Map<String, dynamic> j) => ArquivoPendente(
+    storageFileId: j['storage_file_id'] as String,
+    nome: j['nome'] as String,
+    caminho: j['caminho'] as String? ?? '',
+    mimeType: j['mime_type'] as String,
+    tamanhoBytes: j['tamanho_bytes'] as int,
+    ignorado: j['ignorado'] as bool? ?? false,
+  );
+}
+
 class Motor {
-  const Motor({required this.id, required this.codigo, required this.descricao});
+  const Motor({
+    required this.id,
+    required this.codigo,
+    required this.descricao,
+  });
 
   final int id;
   final String codigo;
@@ -52,6 +113,12 @@ class Motor {
     codigo: j['codigo'] as String,
     descricao: j['descricao'] as String? ?? '',
   );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'codigo': codigo,
+    'descricao': descricao,
+  };
 }
 
 /// Veículo como vem nas listagens: já com os nomes de marca, modelo e motor.
@@ -77,9 +144,10 @@ class Veiculo {
   /// Ex.: "VW Gol · EA111 1.6 8v · 1995–2005".
   String get rotulo {
     final partes = ['$marcaNome $modeloNome'];
-    final motor = [motorCodigo, motorDescricao]
-        .where((p) => p != null && p.isNotEmpty)
-        .join(' ');
+    final motor = [
+      motorCodigo,
+      motorDescricao,
+    ].where((p) => p != null && p.isNotEmpty).join(' ');
     if (motor.isNotEmpty) partes.add(motor);
     if (anoInicio != null && anoFim != null) {
       partes.add(anoInicio == anoFim ? '$anoInicio' : '$anoInicio–$anoFim');
@@ -100,6 +168,16 @@ class Veiculo {
     anoInicio: j['ano_inicio'] as int?,
     anoFim: j['ano_fim'] as int?,
   );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'marca_nome': marcaNome,
+    'modelo_nome': modeloNome,
+    'motor_codigo': motorCodigo,
+    'motor_descricao': motorDescricao,
+    'ano_inicio': anoInicio,
+    'ano_fim': anoFim,
+  };
 }
 
 class Documento {

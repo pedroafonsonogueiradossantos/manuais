@@ -39,13 +39,23 @@ void main() {
     expect(r.usuario.nome, 'Ana');
     expect(r.usuario.admin, isTrue);
     expect(adaptador.pedidos.single.path, '/auth/login');
-    expect(adaptador.pedidos.single.data, {'email': 'ana@exemplo.com', 'senha': 'segredo'});
-    expect(adaptador.pedidos.single.headers.containsKey('Authorization'), isFalse);
+    expect(adaptador.pedidos.single.data, {
+      'email': 'ana@exemplo.com',
+      'senha': 'segredo',
+    });
+    expect(
+      adaptador.pedidos.single.headers.containsKey('Authorization'),
+      isFalse,
+    );
   });
 
   test('erro do backend vira ApiErro com código e mensagem', () async {
     final api = criar(
-      (_) async => respostaErro(401, 'credenciais_invalidas', 'E-mail ou senha incorretos.'),
+      (_) async => respostaErro(
+        401,
+        'credenciais_invalidas',
+        'E-mail ou senha incorretos.',
+      ),
     );
 
     await expectLater(
@@ -53,7 +63,11 @@ void main() {
       throwsA(
         isA<ApiErro>()
             .having((e) => e.codigo, 'codigo', 'credenciais_invalidas')
-            .having((e) => e.mensagem, 'mensagem', 'E-mail ou senha incorretos.')
+            .having(
+              (e) => e.mensagem,
+              'mensagem',
+              'E-mail ou senha incorretos.',
+            )
             .having((e) => e.status, 'status', 401),
       ),
     );
@@ -78,12 +92,16 @@ void main() {
   test('envia o token e avisa quando a sessão não vale mais', () async {
     token = 'meu-token';
     final api = criar(
-      (_) async => respostaErro(401, 'nao_autenticado', 'Faça login para continuar.'),
+      (_) async =>
+          respostaErro(401, 'nao_autenticado', 'Faça login para continuar.'),
     );
 
     await expectLater(api.marcas(), throwsA(isA<ApiErro>()));
 
-    expect(adaptador.pedidos.single.headers['Authorization'], 'Bearer meu-token');
+    expect(
+      adaptador.pedidos.single.headers['Authorization'],
+      'Bearer meu-token',
+    );
     expect(expirou, 1);
   });
 
@@ -104,13 +122,21 @@ void main() {
     expect(pedido.queryParameters, {'q': 'gol 8v', 'marca_id': 3, 'page': 2});
     expect(p.itens.single.titulo, 'Manual de serviço');
     expect(p.itens.single.ehPdf, isTrue);
-    expect(p.itens.single.arquivoModificadoEm, DateTime.utc(2026, 3, 4, 5, 6, 7));
+    expect(
+      p.itens.single.arquivoModificadoEm,
+      DateTime.utc(2026, 3, 4, 5, 6, 7),
+    );
     expect(p.temMais, isTrue);
   });
 
   test('busca sem texto nem marca não manda filtros vazios', () async {
     final api = criar(
-      (_) async => respostaJson(200, {'itens': [], 'total': 0, 'pagina': 1, 'por_pagina': 50}),
+      (_) async => respostaJson(200, {
+        'itens': [],
+        'total': 0,
+        'pagina': 1,
+        'por_pagina': 50,
+      }),
     );
 
     final p = await api.documentos();
@@ -134,7 +160,12 @@ void main() {
             'ano_inicio': 1995,
             'ano_fim': 2005,
           },
-          {'id': 2, 'marca_nome': 'Fiat', 'modelo_nome': 'Uno', 'ano_inicio': 2010},
+          {
+            'id': 2,
+            'marca_nome': 'Fiat',
+            'modelo_nome': 'Uno',
+            'ano_inicio': 2010,
+          },
         ],
         'motores': [
           {'id': 9, 'codigo': 'AP', 'descricao': ''},

@@ -23,7 +23,9 @@ void main() {
 
   File parcial() => File('${pasta.path}/7-md5gol.pdf.part');
 
-  setUp(() async => pasta = await Directory.systemTemp.createTemp('cache_teste'));
+  setUp(
+    () async => pasta = await Directory.systemTemp.createTemp('cache_teste'),
+  );
   tearDown(() => pasta.delete(recursive: true));
 
   test('baixa, informa o progresso e reaproveita na segunda vez', () async {
@@ -31,7 +33,10 @@ void main() {
     final progresso = <String>[];
 
     expect(await cache.existente(doc), isNull);
-    final arquivo = await cache.obter(doc, aoProgredir: (r, t) => progresso.add('$r/$t'));
+    final arquivo = await cache.obter(
+      doc,
+      aoProgredir: (r, t) => progresso.add('$r/$t'),
+    );
 
     expect(await arquivo.readAsString(), '0123456789');
     expect(arquivo.path, endsWith('7-md5gol.pdf'));
@@ -42,7 +47,11 @@ void main() {
 
     final denovo = await cache.obter(doc);
     expect(denovo.path, arquivo.path);
-    expect(adaptador.pedidos, hasLength(1), reason: 'não deveria baixar de novo');
+    expect(
+      adaptador.pedidos,
+      hasLength(1),
+      reason: 'não deveria baixar de novo',
+    );
     expect((await cache.existente(doc))?.path, arquivo.path);
   });
 
@@ -57,7 +66,10 @@ void main() {
     );
     final progresso = <String>[];
 
-    final arquivo = await cache.obter(doc, aoProgredir: (r, t) => progresso.add('$r/$t'));
+    final arquivo = await cache.obter(
+      doc,
+      aoProgredir: (r, t) => progresso.add('$r/$t'),
+    );
 
     expect(await arquivo.readAsString(), '0123456789');
     expect(adaptador.pedidos.single.headers['Range'], 'bytes=4-');
@@ -78,7 +90,11 @@ void main() {
     await parcial().writeAsBytes(List.filled(50, 0));
     final cache = criar((pedido) async {
       return pedido.headers.containsKey('Range')
-          ? respostaErro(416, 'intervalo_invalido', 'Intervalo de bytes inválido.')
+          ? respostaErro(
+              416,
+              'intervalo_invalido',
+              'Intervalo de bytes inválido.',
+            )
           : respostaBytes(200, conteudo);
     });
 
@@ -89,11 +105,15 @@ void main() {
   });
 
   test('download com tamanho errado é descartado', () async {
-    final cache = criar((_) async => respostaBytes(200, conteudo.sublist(0, 6)));
+    final cache = criar(
+      (_) async => respostaBytes(200, conteudo.sublist(0, 6)),
+    );
 
     await expectLater(
       cache.obter(doc),
-      throwsA(isA<ApiErro>().having((e) => e.codigo, 'codigo', 'download_incompleto')),
+      throwsA(
+        isA<ApiErro>().having((e) => e.codigo, 'codigo', 'download_incompleto'),
+      ),
     );
     expect(await cache.existente(doc), isNull);
     expect(await parcial().exists(), isFalse);
@@ -101,7 +121,11 @@ void main() {
 
   test('erro do servidor vira ApiErro e não deixa arquivo final', () async {
     final cache = criar(
-      (_) async => respostaErro(404, 'arquivo_indisponivel', 'O arquivo não está mais disponível.'),
+      (_) async => respostaErro(
+        404,
+        'arquivo_indisponivel',
+        'O arquivo não está mais disponível.',
+      ),
     );
 
     await expectLater(
@@ -115,7 +139,10 @@ void main() {
     final cache = criar((_) async => respostaBytes(200, conteudo));
     await cache.obter(doc);
 
-    final novo = Documento.fromJson({...documentoJson, 'arquivo_md5': 'md5novo'});
+    final novo = Documento.fromJson({
+      ...documentoJson,
+      'arquivo_md5': 'md5novo',
+    });
     expect(await cache.existente(novo), isNull);
   });
 }
