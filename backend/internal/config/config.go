@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"regexp"
 	"strings"
 )
 
@@ -31,8 +32,10 @@ func Carregar(getenv func(string) string) (Config, error) {
 		DatabaseURL: url,
 		HTTPAddr:    getenv("HTTP_ADDR"),
 		JWTSecret:   getenv("JWT_SECRET"),
-
-		DrivePastaRaizID: getenv("DRIVE_ROOT_FOLDER_ID"),
+	}
+	cfg.DrivePastaRaizID, err = IDDaPastaDoDrive(getenv("DRIVE_ROOT_FOLDER_ID"))
+	if err != nil {
+		return Config{}, err
 	}
 	if len(cfg.JWTSecret) < jwtSecretMin {
 		return Config{}, fmt.Errorf("variável JWT_SECRET é obrigatória e precisa de pelo menos %d caracteres", jwtSecretMin)
@@ -56,6 +59,23 @@ func URLDoBanco(getenv func(string) string) (string, error) {
 		return "", errors.New("variável DATABASE_URL é obrigatória")
 	}
 	return url, nil
+}
+
+var idDoDrive = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// IDDaPastaDoDrive aceita o ID puro ou a URL da pasta colada do navegador
+// (".../folders/<id>?hl=pt-br") e devolve só o ID. Vazio continua vazio.
+func IDDaPastaDoDrive(valor string) (string, error) {
+	id := strings.TrimSpace(valor)
+	if _, depois, achou := strings.Cut(id, "/folders/"); achou {
+		id = depois
+	}
+	id, _, _ = strings.Cut(id, "?")
+	id = strings.Trim(id, "/")
+	if id != "" && !idDoDrive.MatchString(id) {
+		return "", fmt.Errorf("variável DRIVE_ROOT_FOLDER_ID inválida: %q não é um ID de pasta do Drive", valor)
+	}
+	return id, nil
 }
 
 // lerPrefixos aceita IPs e CIDRs separados por vírgula.

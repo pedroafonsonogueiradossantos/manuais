@@ -57,6 +57,29 @@ func TestCarregarProxies(t *testing.T) {
 	}
 }
 
+func TestIDDaPastaDoDrive(t *testing.T) {
+	const id = "1TPKF_e8tLzvRku1-jq0Uwm9R4Lq3QXoT"
+	aceitos := []string{
+		id,
+		"  " + id + "  ",
+		"/" + id + "?hl=pt-br",
+		"https://drive.google.com/drive/folders/" + id,
+		"https://drive.google.com/drive/u/0/folders/" + id + "?hl=pt-br",
+	}
+	for _, valor := range aceitos {
+		got, err := IDDaPastaDoDrive(valor)
+		if err != nil || got != id {
+			t.Errorf("IDDaPastaDoDrive(%q) = %q, %v; quero %q", valor, got, err, id)
+		}
+	}
+	if got, err := IDDaPastaDoDrive(""); err != nil || got != "" {
+		t.Errorf("vazio deveria continuar vazio, veio %q, %v", got, err)
+	}
+	if _, err := IDDaPastaDoDrive("minha pasta"); err == nil || !strings.Contains(err.Error(), "DRIVE_ROOT_FOLDER_ID") {
+		t.Errorf("quero erro citando DRIVE_ROOT_FOLDER_ID, veio %v", err)
+	}
+}
+
 func TestCarregarRecusa(t *testing.T) {
 	casos := map[string]struct {
 		env   func(string) string
@@ -66,6 +89,7 @@ func TestCarregarRecusa(t *testing.T) {
 		"sem JWT_SECRET":         {env(map[string]string{"DATABASE_URL": "postgres://x"}), "JWT_SECRET"},
 		"JWT_SECRET curto":       {base(map[string]string{"JWT_SECRET": "curto"}), "JWT_SECRET"},
 		"TRUSTED_PROXIES errado": {base(map[string]string{"TRUSTED_PROXIES": "abc"}), "TRUSTED_PROXIES"},
+		"pasta do Drive errada":  {base(map[string]string{"DRIVE_ROOT_FOLDER_ID": "a b"}), "DRIVE_ROOT_FOLDER_ID"},
 	}
 	for nome, c := range casos {
 		t.Run(nome, func(t *testing.T) {
