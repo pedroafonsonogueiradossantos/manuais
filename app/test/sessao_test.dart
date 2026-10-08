@@ -13,7 +13,9 @@ import 'apoio/cofre_memoria.dart';
 void main() {
   late CofreMemoria cofre;
 
-  ProviderContainer criar(Future<ResponseBody> Function(RequestOptions) responder) {
+  ProviderContainer criar(
+    Future<ResponseBody> Function(RequestOptions) responder,
+  ) {
     final container = ProviderContainer(
       overrides: [
         cofreProvider.overrideWithValue(cofre),
@@ -39,30 +41,39 @@ void main() {
     expect(await pronta(c), isA<SessaoDeslogada>());
   });
 
-  test('entrar guarda token e usuário; as chamadas seguintes levam o token', () async {
-    late RequestOptions ultimo;
-    final c = criar((pedido) async {
-      ultimo = pedido;
-      return pedido.path == '/auth/login'
-          ? respostaJson(200, {'token': 'tok', 'usuario': usuarioJson})
-          : respostaJson(200, []);
-    });
-    await pronta(c);
+  test(
+    'entrar guarda token e usuário; as chamadas seguintes levam o token',
+    () async {
+      late RequestOptions ultimo;
+      final c = criar((pedido) async {
+        ultimo = pedido;
+        return pedido.path == '/auth/login'
+            ? respostaJson(200, {'token': 'tok', 'usuario': usuarioJson})
+            : respostaJson(200, []);
+      });
+      await pronta(c);
 
-    await c.read(sessaoProvider.notifier).entrar('ana@exemplo.com', 'segredo');
+      await c
+          .read(sessaoProvider.notifier)
+          .entrar('ana@exemplo.com', 'segredo');
 
-    final s = c.read(sessaoProvider) as SessaoLogada;
-    expect(s.usuario.nome, 'Ana');
-    expect(cofre.dados['token'], 'tok');
-    expect(jsonDecode(cofre.dados['usuario']!)['email'], 'ana@exemplo.com');
+      final s = c.read(sessaoProvider) as SessaoLogada;
+      expect(s.usuario.nome, 'Ana');
+      expect(cofre.dados['token'], 'tok');
+      expect(jsonDecode(cofre.dados['usuario']!)['email'], 'ana@exemplo.com');
 
-    await c.read(apiProvider).marcas();
-    expect(ultimo.headers['Authorization'], 'Bearer tok');
-  });
+      await c.read(apiProvider).marcas();
+      expect(ultimo.headers['Authorization'], 'Bearer tok');
+    },
+  );
 
   test('login recusado propaga o erro e continua deslogada', () async {
     final c = criar(
-      (_) async => respostaErro(401, 'credenciais_invalidas', 'E-mail ou senha incorretos.'),
+      (_) async => respostaErro(
+        401,
+        'credenciais_invalidas',
+        'E-mail ou senha incorretos.',
+      ),
     );
     await pronta(c);
 
@@ -94,7 +105,8 @@ void main() {
     cofre.dados['token'] = 'vencido';
     cofre.dados['usuario'] = jsonEncode(usuarioJson);
     final c = criar(
-      (_) async => respostaErro(401, 'nao_autenticado', 'Faça login para continuar.'),
+      (_) async =>
+          respostaErro(401, 'nao_autenticado', 'Faça login para continuar.'),
     );
     await pronta(c);
 

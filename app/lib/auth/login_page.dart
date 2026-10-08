@@ -33,7 +33,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _erro = null;
     });
     try {
-      await ref.read(sessaoProvider.notifier).entrar(_email.text.trim(), _senha.text);
+      await ref
+          .read(sessaoProvider.notifier)
+          .entrar(_email.text.trim(), _senha.text);
       // Deu certo: o app troca de tela sozinho ao observar a sessão.
     } on ApiErro catch (e) {
       if (!mounted) return;
@@ -60,7 +62,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.menu_book, size: 64, color: tema.colorScheme.primary),
+                      Icon(
+                        Icons.menu_book,
+                        size: 64,
+                        color: tema.colorScheme.primary,
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         'Manuais',
@@ -79,8 +85,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           labelText: 'E-mail',
                           border: OutlineInputBorder(),
                         ),
-                        validator: (v) =>
-                            (v == null || !v.contains('@')) ? 'Informe o e-mail.' : null,
+                        validator: (v) => (v == null || !v.contains('@'))
+                            ? 'Informe o e-mail.'
+                            : null,
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
@@ -94,15 +101,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           labelText: 'Senha',
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
-                            tooltip: _senhaVisivel ? 'Ocultar senha' : 'Mostrar senha',
+                            tooltip: _senhaVisivel
+                                ? 'Ocultar senha'
+                                : 'Mostrar senha',
                             icon: Icon(
-                              _senhaVisivel ? Icons.visibility_off : Icons.visibility,
+                              _senhaVisivel
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
                             ),
-                            onPressed: () => setState(() => _senhaVisivel = !_senhaVisivel),
+                            onPressed: () =>
+                                setState(() => _senhaVisivel = !_senhaVisivel),
                           ),
                         ),
-                        validator: (v) =>
-                            (v == null || v.isEmpty) ? 'Informe a senha.' : null,
+                        validator: (v) => (v == null || v.isEmpty)
+                            ? 'Informe a senha.'
+                            : null,
                       ),
                       if (_erro != null) ...[
                         const SizedBox(height: 16),
@@ -120,7 +133,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           child: _enviando
                               ? const SizedBox.square(
                                   dimension: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Entrar'),
                         ),

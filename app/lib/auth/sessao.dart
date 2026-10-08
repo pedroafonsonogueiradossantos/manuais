@@ -47,7 +47,9 @@ class SessaoNotifier extends Notifier<Sessao> {
       if (token != null && usuario != null) {
         restaurada = SessaoLogada(
           token: token,
-          usuario: Usuario.fromJson(jsonDecode(usuario) as Map<String, dynamic>),
+          usuario: Usuario.fromJson(
+            jsonDecode(usuario) as Map<String, dynamic>,
+          ),
         );
       }
     } catch (_) {
@@ -64,6 +66,15 @@ class SessaoNotifier extends Notifier<Sessao> {
     await cofre.gravar(_chaveToken, r.token);
     await cofre.gravar(_chaveUsuario, jsonEncode(r.usuario.toJson()));
     state = SessaoLogada(token: r.token, usuario: r.usuario);
+  }
+
+  /// Lança [ApiErro] se a senha atual estiver errada ou a nova for inválida.
+  Future<void> trocarSenha(String atual, String nova) async {
+    final sessao = state;
+    if (sessao is! SessaoLogada) return;
+    final token = await ref.read(apiProvider).trocarSenha(atual, nova);
+    await ref.read(cofreProvider).gravar(_chaveToken, token);
+    state = SessaoLogada(token: token, usuario: sessao.usuario);
   }
 
   Future<void> sair() async {

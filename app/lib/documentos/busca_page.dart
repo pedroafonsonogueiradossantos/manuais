@@ -4,20 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/modelos.dart';
-import '../auth/sessao.dart';
+import '../comum/avisos.dart';
+import '../comum/seletor_page.dart';
 import '../provedores.dart';
 import '../util/formatos.dart';
 import 'busca.dart';
-import 'detalhe_page.dart';
+import 'item_documento.dart';
 
-class BuscaPage extends ConsumerStatefulWidget {
-  const BuscaPage({super.key});
+/// Aba de busca no catálogo do servidor.
+class BuscaTab extends ConsumerStatefulWidget {
+  const BuscaTab({super.key});
 
   @override
-  ConsumerState<BuscaPage> createState() => _BuscaPageState();
+  ConsumerState<BuscaTab> createState() => _BuscaTabState();
 }
 
-class _BuscaPageState extends ConsumerState<BuscaPage> {
+class _BuscaTabState extends ConsumerState<BuscaTab> {
   final _texto = TextEditingController();
   final _rolagem = ScrollController();
   Timer? _espera;
@@ -57,59 +59,60 @@ class _BuscaPageState extends ConsumerState<BuscaPage> {
     setState(() {});
   }
 
+  void _abrirFiltros(Filtros filtros) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _PainelDeFiltros(inicial: filtros),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final busca = ref.watch(buscaProvider);
-    final usuario = switch (ref.watch(sessaoProvider)) {
-      SessaoLogada(:final usuario) => usuario,
-      _ => null,
-    };
+    final extras = busca.filtros.extras;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Manuais'),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Conta',
-            icon: const Icon(Icons.account_circle),
-            onSelected: (_) => ref.read(sessaoProvider.notifier).sair(),
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                enabled: false,
-                child: Text(usuario == null ? '' : '${usuario.nome}\n${usuario.email}'),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 4, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const Key('busca'),
+                  controller: _texto,
+                  onChanged: _aoDigitar,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: 'Modelo, motor ou título',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _texto.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Limpar',
+                            icon: const Icon(Icons.clear),
+                            onPressed: _limpar,
+                          ),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
               ),
-              const PopupMenuItem(value: 'sair', child: Text('Sair')),
+              IconButton(
+                tooltip: 'Filtros',
+                onPressed: () => _abrirFiltros(busca.filtros),
+                icon: Badge(
+                  isLabelVisible: extras > 0,
+                  label: Text('$extras'),
+                  child: const Icon(Icons.tune),
+                ),
+              ),
             ],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: TextField(
-              key: const Key('busca'),
-              controller: _texto,
-              onChanged: _aoDigitar,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: 'Modelo, motor ou título',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _texto.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Limpar',
-                        icon: const Icon(Icons.clear),
-                        onPressed: _limpar,
-                      ),
-                border: const OutlineInputBorder(),
-              ),
-            ),
-          ),
-          _FiltroDeMarca(selecionada: busca.marcaId),
-          Expanded(child: _resultado(busca)),
-        ],
-      ),
+        ),
+        _FiltroDeMarca(selecionada: busca.filtros.marcaId),
+        Expanded(child: _resultado(busca)),
+      ],
     );
   }
 
@@ -120,9 +123,11 @@ class _BuscaPageState extends ConsumerState<BuscaPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (busca.erro != null && busca.itens.isEmpty) {
-      return _Aviso(
+      return Aviso(
         icone: Icons.cloud_off,
-        texto: busca.erro!,
+        texto: busca.semConexao
+            ? '${busca.erro}\nOs documentos salvos continuam na aba Baixados.'
+            : busca.erro!,
         acao: FilledButton.tonal(
           onPressed: notifier.recarregar,
           child: const Text('Tentar de novo'),
@@ -130,7 +135,7 @@ class _BuscaPageState extends ConsumerState<BuscaPage> {
       );
     }
     if (busca.itens.isEmpty) {
-      return const _Aviso(
+      return const Aviso(
         icone: Icons.search_off,
         texto: 'Nenhum documento encontrado.',
       );
@@ -146,7 +151,7 @@ class _BuscaPageState extends ConsumerState<BuscaPage> {
         itemCount: busca.itens.length + (temRodape ? 1 : 0),
         separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (context, i) {
-          if (i < busca.itens.length) return _ItemDocumento(busca.itens[i]);
+          if (i < busca.itens.length) return ItemDocumento(busca.itens[i]);
           if (busca.erro != null) {
             return ListTile(
               leading: const Icon(Icons.error_outline),
@@ -174,7 +179,7 @@ class _FiltroDeMarca extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final marcas = ref.watch(marcasProvider).value ?? const <Marca>[];
+    final marcas = ref.watch(marcasDoFiltroProvider).value ?? const <Marca>[];
     if (marcas.isEmpty) return const SizedBox(height: 8);
 
     final notifier = ref.read(buscaProvider.notifier);
@@ -190,7 +195,8 @@ class _FiltroDeMarca extends ConsumerWidget {
               child: FilterChip(
                 label: Text(m.nome),
                 selected: m.id == selecionada,
-                onSelected: (ligar) => notifier.definirMarca(ligar ? m.id : null),
+                onSelected: (ligar) =>
+                    notifier.definirMarca(ligar ? m.id : null),
               ),
             ),
         ],
@@ -199,49 +205,120 @@ class _FiltroDeMarca extends ConsumerWidget {
   }
 }
 
-class _ItemDocumento extends StatelessWidget {
-  const _ItemDocumento(this.doc);
+/// Filtros menos usados: tipo, modelo (da marca escolhida) e motor.
+class _PainelDeFiltros extends ConsumerStatefulWidget {
+  const _PainelDeFiltros({required this.inicial});
 
-  final Documento doc;
+  final Filtros inicial;
 
   @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(doc.ehImagem ? Icons.image_outlined : Icons.picture_as_pdf_outlined),
-      title: Text(doc.titulo, maxLines: 2, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '${rotuloDoTipo(doc.tipo)} · ${tamanhoLegivel(doc.tamanhoBytes)}'
-        '${doc.indisponivel ? ' · indisponível' : ''}',
-      ),
-      trailing: doc.favorito ? const Icon(Icons.star, size: 20) : null,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => DetalhePage(documentoId: doc.id)),
-      ),
-    );
-  }
+  ConsumerState<_PainelDeFiltros> createState() => _PainelDeFiltrosState();
 }
 
-class _Aviso extends StatelessWidget {
-  const _Aviso({required this.icone, required this.texto, this.acao});
+class _PainelDeFiltrosState extends ConsumerState<_PainelDeFiltros> {
+  late Modelo? _modelo = widget.inicial.modelo;
+  late Motor? _motor = widget.inicial.motor;
+  late String? _tipo = widget.inicial.tipo;
 
-  final IconData icone;
-  final String texto;
-  final Widget? acao;
+  /// Cada mudança já refaz a busca: o painel pode ser fechado a qualquer hora.
+  void _aplicar() {
+    ref
+        .read(buscaProvider.notifier)
+        .definirExtras(modelo: _modelo, motor: _motor, tipo: _tipo);
+    setState(() {});
+  }
+
+  Future<void> _escolherModelo(int marcaId) async {
+    final api = ref.read(apiProvider);
+    final modelo = await Navigator.of(context).push<Modelo>(
+      MaterialPageRoute(
+        builder: (_) => SeletorPage<Modelo>(
+          titulo: 'Modelo',
+          carregar: () => api.modelos(marcaId),
+          rotulo: (m) => m.nome,
+        ),
+      ),
+    );
+    if (modelo == null) return;
+    _modelo = modelo;
+    _aplicar();
+  }
+
+  Future<void> _escolherMotor() async {
+    final api = ref.read(apiProvider);
+    final motor = await Navigator.of(context).push<Motor>(
+      MaterialPageRoute(
+        builder: (_) => SeletorPage<Motor>(
+          titulo: 'Motor',
+          carregar: api.motores,
+          rotulo: (m) => m.rotulo,
+        ),
+      ),
+    );
+    if (motor == null) return;
+    _motor = motor;
+    _aplicar();
+  }
+
+  Widget _limpar(String oQue, VoidCallback aoLimpar) => IconButton(
+    tooltip: 'Tirar o filtro de $oQue',
+    icon: const Icon(Icons.clear),
+    onPressed: () {
+      aoLimpar();
+      _aplicar();
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icone, size: 48, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(texto, textAlign: TextAlign.center),
-            if (acao != null) ...[const SizedBox(height: 16), acao!],
-          ],
-        ),
+    final marcaId = ref.watch(buscaProvider).filtros.marcaId;
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                for (final t in tiposDeDocumento.entries)
+                  ChoiceChip(
+                    label: Text(t.value),
+                    selected: _tipo == t.key,
+                    onSelected: (ligar) {
+                      _tipo = ligar ? t.key : null;
+                      _aplicar();
+                    },
+                  ),
+              ],
+            ),
+          ),
+          ListTile(
+            key: const Key('filtro-modelo'),
+            title: const Text('Modelo'),
+            subtitle: Text(
+              _modelo?.nome ??
+                  (marcaId == null ? 'Escolha uma marca antes' : 'Todos'),
+            ),
+            enabled: marcaId != null,
+            trailing: _modelo == null
+                ? const Icon(Icons.chevron_right)
+                : _limpar('modelo', () => _modelo = null),
+            onTap: marcaId == null ? null : () => _escolherModelo(marcaId),
+          ),
+          ListTile(
+            key: const Key('filtro-motor'),
+            title: const Text('Motor'),
+            subtitle: Text(_motor?.rotulo ?? 'Todos'),
+            trailing: _motor == null
+                ? const Icon(Icons.chevron_right)
+                : _limpar('motor', () => _motor = null),
+            onTap: _escolherMotor,
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }

@@ -1,17 +1,43 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../admin/catalogar_page.dart';
 import '../api/api_client.dart';
 import '../api/modelos.dart';
 import '../arquivos/visualizador_page.dart';
+import '../auth/sessao.dart';
+import '../comum/avisos.dart';
+import '../offline/banco_local.dart';
 import '../provedores.dart';
 import '../util/formatos.dart';
 import 'busca.dart';
 
-final documentoProvider = FutureProvider.autoDispose.family<DocumentoDetalhe, int>(
-  (ref, id) => ref.watch(apiProvider).documento(id),
+/// Detalhe do servidor ou, sem conexão, a cópia guardada no aparelho.
+typedef DetalheCarregado = ({DocumentoDetalhe detalhe, bool offline});
+
+final documentoProvider = FutureProvider.autoDispose
+    .family<DetalheCarregado, int>((ref, id) async {
+      final banco = ref.watch(bancoLocalProvider);
+      try {
+        final detalhe = await ref.watch(apiProvider).documento(id);
+        // Mantém a cópia local em dia (título, veículos, versão do arquivo).
+        await banco.atualizarSeExistir(detalhe);
+        return (detalhe: detalhe, offline: false);
+      } on ApiErro catch (e) {
+        final local = e.semConexao ? await banco.buscar(id) : null;
+        if (local == null) rethrow;
+        return (detalhe: local.detalhe, offline: true);
+      }
+    });
+
+final _localProvider = StreamProvider.autoDispose.family<DocumentoLocal?, int>(
+  (ref, id) => ref.watch(bancoLocalProvider).observar(id),
 );
+
+enum _Operacao { abrindo, salvando }
 
 class DetalhePage extends ConsumerStatefulWidget {
   const DetalhePage({super.key, required this.documentoId});
@@ -23,12 +49,10 @@ class DetalhePage extends ConsumerStatefulWidget {
 }
 
 class _DetalhePageState extends ConsumerState<DetalhePage> {
-  /// Fração baixada (0 a 1) enquanto o arquivo é aberto; null = parado.
-  double? _progresso;
+  /// Download em andamento e sua fração (0 a 1).
+  _Operacao? _operacao;
+  double _progresso = 0;
   CancelToken? _cancelamento;
-
-  /// Favorito já alterado nesta tela, antes de o servidor confirmar.
-  bool? _favorito;
 
   @override
   void dispose() {
@@ -36,98 +60,147 @@ class _DetalhePageState extends ConsumerState<DetalhePage> {
     super.dispose();
   }
 
-  void _avisar(String texto) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(texto)));
-  }
-
-  Future<void> _abrir(Documento doc) async {
-    if (_progresso != null) return;
+  /// Roda um download mostrando progresso; devolve null se falhar ou for
+  /// cancelado (o erro já foi mostrado).
+  Future<File?> _baixar(
+    _Operacao operacao,
+    Future<File> Function(void Function(int, int) aoProgredir, CancelToken c)
+    acao,
+  ) async {
+    if (_operacao != null) return null;
     final cancelamento = _cancelamento = CancelToken();
-    setState(() => _progresso = 0);
+    setState(() {
+      _operacao = operacao;
+      _progresso = 0;
+    });
     try {
-      final arquivo = await ref
-          .read(arquivoCacheProvider)
-          .obter(
-            doc,
-            cancelamento: cancelamento,
-            aoProgredir: (recebido, total) {
-              if (mounted && total > 0) setState(() => _progresso = recebido / total);
-            },
-          );
-      if (!mounted) return;
-      setState(() => _progresso = null);
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => VisualizadorPage(documento: doc, arquivo: arquivo),
-        ),
-      );
+      return await acao((recebido, total) {
+        if (mounted && total > 0) setState(() => _progresso = recebido / total);
+      }, cancelamento);
     } on ApiErro catch (e) {
-      if (!mounted) return;
-      setState(() => _progresso = null);
-      if (!cancelamento.isCancelled) _avisar(e.mensagem);
+      if (mounted && !cancelamento.isCancelled) avisar(context, e.mensagem);
+      return null;
+    } finally {
+      if (mounted) setState(() => _operacao = null);
     }
   }
 
-  Future<void> _alternarFavorito(Documento doc) async {
-    final novo = !(_favorito ?? doc.favorito);
-    setState(() => _favorito = novo);
+  Future<void> _abrir(Documento doc) async {
+    // Salvo no aparelho abre direto, com ou sem internet.
+    var arquivo = await ref.read(offlineProvider).arquivoSalvo(doc.id);
+    arquivo ??= await _baixar(
+      _Operacao.abrindo,
+      (progresso, c) => ref
+          .read(arquivoCacheProvider)
+          .obter(doc, aoProgredir: progresso, cancelamento: c),
+    );
+    if (arquivo == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VisualizadorPage.doDocumento(doc, arquivo!),
+      ),
+    );
+  }
+
+  Future<void> _salvar(DocumentoDetalhe d, {bool atualizando = false}) async {
+    final arquivo = await _baixar(
+      _Operacao.salvando,
+      (progresso, c) => ref
+          .read(offlineProvider)
+          .salvar(d, aoProgredir: progresso, cancelamento: c),
+    );
+    if (arquivo != null && mounted) {
+      avisar(
+        context,
+        atualizando ? 'Arquivo atualizado.' : 'Salvo no aparelho.',
+      );
+    }
+  }
+
+  Future<void> _remover(Documento doc) async {
+    await ref.read(offlineProvider).remover(doc.id);
+    if (mounted) avisar(context, 'Removido do aparelho.');
+  }
+
+  Future<void> _alternarFavorito(Documento doc, bool atual) async {
     try {
-      await ref.read(apiProvider).definirFavorito(doc.id, novo);
-      ref.read(buscaProvider.notifier).atualizarFavorito(doc.id, novo);
+      await ref.read(offlineProvider).definirFavorito(doc, !atual);
+      ref.read(buscaProvider.notifier).atualizarFavorito(doc.id, !atual);
     } on ApiErro catch (e) {
-      if (!mounted) return;
-      setState(() => _favorito = !novo);
-      _avisar(e.mensagem);
+      if (mounted) avisar(context, e.mensagem);
+    }
+  }
+
+  Future<void> _editar(DocumentoDetalhe d) async {
+    final resultado = await Navigator.of(context).push<ResultadoDaCatalogacao>(
+      MaterialPageRoute(builder: (_) => CatalogarPage.editar(d)),
+    );
+    if (!mounted || resultado == null) return;
+    if (resultado == ResultadoDaCatalogacao.excluido) {
+      Navigator.of(context).pop();
+    } else {
+      ref.invalidate(documentoProvider(widget.documentoId));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final detalhe = ref.watch(documentoProvider(widget.documentoId));
-    final doc = detalhe.value?.documento;
-    final favorito = _favorito ?? doc?.favorito ?? false;
+    final carregado = ref.watch(documentoProvider(widget.documentoId));
+    final local = ref.watch(_localProvider(widget.documentoId)).value;
+    final detalhe = carregado.value?.detalhe;
+    final offline = carregado.value?.offline ?? false;
+    final doc = detalhe?.documento;
+    final favorito = local?.favorito ?? doc?.favorito ?? false;
+    final admin = switch (ref.watch(sessaoProvider)) {
+      SessaoLogada(:final usuario) => usuario.admin,
+      _ => false,
+    };
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Documento'),
         actions: [
+          if (detalhe != null && admin && !offline)
+            IconButton(
+              tooltip: 'Editar',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _editar(detalhe),
+            ),
           if (doc != null)
             IconButton(
               tooltip: favorito ? 'Remover dos favoritos' : 'Favoritar',
               icon: Icon(favorito ? Icons.star : Icons.star_border),
-              onPressed: () => _alternarFavorito(doc),
+              onPressed: () => _alternarFavorito(doc, favorito),
             ),
         ],
       ),
-      body: detalhe.when(
+      body: carregado.when(
+        skipLoadingOnRefresh: true,
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (erro, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(ApiClient.traduzir(erro).mensagem, textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                FilledButton.tonal(
-                  onPressed: () => ref.invalidate(documentoProvider(widget.documentoId)),
-                  child: const Text('Tentar de novo'),
-                ),
-              ],
-            ),
+        error: (erro, _) => Aviso(
+          icone: Icons.cloud_off,
+          texto: ApiClient.traduzir(erro).mensagem,
+          acao: FilledButton.tonal(
+            onPressed: () =>
+                ref.invalidate(documentoProvider(widget.documentoId)),
+            child: const Text('Tentar de novo'),
           ),
         ),
-        data: _conteudo,
+        data: (c) => _conteudo(c.detalhe, c.offline, local),
       ),
     );
   }
 
-  Widget _conteudo(DocumentoDetalhe d) {
+  Widget _conteudo(DocumentoDetalhe d, bool offline, DocumentoLocal? local) {
     final doc = d.documento;
     final tema = Theme.of(context);
-    final baixando = _progresso != null;
+    final salvo = local?.baixado ?? false;
+    final desatualizado =
+        salvo &&
+        !offline &&
+        !doc.indisponivel &&
+        local!.versaoBaixada != doc.versaoDoArquivo;
+    final ocupado = _operacao != null;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -135,28 +208,73 @@ class _DetalhePageState extends ConsumerState<DetalhePage> {
         Text(doc.titulo, style: tema.textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text(
-          '${rotuloDoTipo(doc.tipo)} · ${tamanhoLegivel(doc.tamanhoBytes)}',
-          style: tema.textTheme.bodyMedium?.copyWith(color: tema.colorScheme.onSurfaceVariant),
+          '${rotuloDoTipo(doc.tipo)} · ${tamanhoLegivel(doc.tamanhoBytes)}'
+          '${salvo ? ' · salvo no aparelho' : ''}',
+          style: tema.textTheme.bodyMedium?.copyWith(
+            color: tema.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 20),
-        if (doc.indisponivel)
+        if (offline)
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.cloud_off),
+              title: Text('Sem conexão. Mostrando a cópia salva no aparelho.'),
+            ),
+          ),
+        if (doc.indisponivel && !salvo)
           const Card(
             child: ListTile(
               leading: Icon(Icons.warning_amber),
               title: Text('O arquivo não está mais disponível no servidor.'),
             ),
-          )
-        else ...[
+          ),
+        if (desatualizado)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.update),
+              title: const Text('Há uma versão mais nova deste arquivo.'),
+              trailing: TextButton(
+                onPressed: ocupado ? null : () => _salvar(d, atualizando: true),
+                child: const Text('Atualizar'),
+              ),
+            ),
+          ),
+        if (salvo || !doc.indisponivel) ...[
+          const SizedBox(height: 4),
           FilledButton.icon(
             key: const Key('abrir'),
-            onPressed: baixando ? null : () => _abrir(doc),
+            onPressed: ocupado ? null : () => _abrir(doc),
             icon: const Icon(Icons.open_in_new),
             label: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(baixando ? 'Baixando… ${(_progresso! * 100).round()}%' : 'Abrir'),
+              child: Text(
+                _operacao == _Operacao.abrindo
+                    ? 'Baixando… ${(_progresso * 100).round()}%'
+                    : 'Abrir',
+              ),
             ),
           ),
-          if (baixando) ...[
+          const SizedBox(height: 8),
+          if (salvo)
+            OutlinedButton.icon(
+              key: const Key('remover-offline'),
+              onPressed: ocupado ? null : () => _remover(doc),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Remover do aparelho'),
+            )
+          else if (!offline)
+            OutlinedButton.icon(
+              key: const Key('salvar-offline'),
+              onPressed: ocupado ? null : () => _salvar(d),
+              icon: const Icon(Icons.download_outlined),
+              label: Text(
+                _operacao == _Operacao.salvando
+                    ? 'Salvando… ${(_progresso * 100).round()}%'
+                    : 'Salvar para usar offline',
+              ),
+            ),
+          if (ocupado) ...[
             const SizedBox(height: 8),
             LinearProgressIndicator(value: _progresso == 0 ? null : _progresso),
             Align(

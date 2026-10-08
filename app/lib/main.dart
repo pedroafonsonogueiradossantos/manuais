@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth/login_page.dart';
 import 'auth/sessao.dart';
-import 'documentos/busca_page.dart';
+import 'inicio_page.dart';
 import 'provedores.dart';
 
 void main() {
@@ -32,7 +32,7 @@ class ManuaisApp extends ConsumerWidget {
             body: Center(child: CircularProgressIndicator()),
           ),
           SessaoDeslogada() => const LoginPage(),
-          SessaoLogada() => const BuscaPage(),
+          SessaoLogada(:final usuario) => InicioPage(usuario: usuario),
         },
       ),
     );
