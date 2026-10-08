@@ -11,12 +11,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 
 	"golang.org/x/term"
 
 	"manuais/backend/internal/config"
 	"manuais/backend/internal/db"
+	"manuais/backend/internal/storage/drive"
 	"manuais/backend/internal/usuarios"
 )
 
@@ -25,6 +27,7 @@ const uso = `uso: admin <comando> [opções]
 comandos:
   migrate       aplica as migrations pendentes
   create-user   cria um usuário (--nome, --email, --papel admin|mecanico)
+  check-drive   testa o acesso à pasta do Drive e mostra o que encontrou
 `
 
 func main() {
@@ -39,6 +42,8 @@ func main() {
 		err = migrar(context.Background())
 	case "create-user":
 		err = criarUsuario(context.Background(), os.Args[2:])
+	case "check-drive":
+		err = conferirDrive(context.Background())
 	default:
 		fmt.Fprint(os.Stderr, uso)
 		os.Exit(2)
@@ -100,6 +105,38 @@ func criarUsuario(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Printf("usuário criado: id=%d email=%s papel=%s\n", u.ID, u.Email, u.Papel)
+	return nil
+}
+
+// conferirDrive lista a pasta com as mesmas credenciais da API, para
+// diagnosticar a configuração sem precisar subir o servidor.
+func conferirDrive(ctx context.Context) error {
+	id, err := config.IDDaPastaDoDrive(os.Getenv("DRIVE_ROOT_FOLDER_ID"))
+	if err != nil {
+		return err
+	}
+	if id == "" {
+		return errors.New("variável DRIVE_ROOT_FOLDER_ID é obrigatória")
+	}
+	if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
+		return errors.New("variável GOOGLE_APPLICATION_CREDENTIALS é obrigatória")
+	}
+	st, err := drive.Novo(ctx, id)
+	if err != nil {
+		return err
+	}
+	arquivos, err := st.List(ctx)
+	if err != nil {
+		return fmt.Errorf("%w\n(404 costuma ser ID errado ou pasta não compartilhada com a service account)", err)
+	}
+	fmt.Printf("pasta %s: %d arquivos catalogáveis (PDFs e imagens)\n", id, len(arquivos))
+	for i, a := range arquivos {
+		if i == 10 {
+			fmt.Printf("  ... e mais %d\n", len(arquivos)-10)
+			break
+		}
+		fmt.Printf("  %s\n", path.Join(a.Caminho, a.Nome))
+	}
 	return nil
 }
 
